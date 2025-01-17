@@ -1,7 +1,11 @@
 package com.scales.test.service;
 
+import com.scales.test.service.ip.IServerType;
+import com.scales.test.service.ip.ServerTypeEc2;
+import com.scales.test.service.ip.ServerTypeFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -18,8 +22,14 @@ public class HeartbeatService {
     @Value("${config.heartbeat-queue.url}")
     private String queueUrl;
 
+    @Value("${config.server-type}")
+    private String serverType;
+
     @Value("${server.port}")
     private String port;
+
+    @Autowired
+    private ServerTypeFactory serverTypeFactory;
 
     private String instanceIP;
     private static final Logger logger = LoggerFactory.getLogger(HeartbeatService.class);
@@ -30,31 +40,13 @@ public class HeartbeatService {
     }
 
     public void fetchPublicIp() {
+        IServerType serverTypeInstance = serverTypeFactory.getServerType(serverType);
+
         int retries = 3; // Maximum retries
         while (retries > 0) {
             try {
-                // Step 1: Fetch the IMDSv2 token
-                URL tokenUrl = new URL("http://169.254.169.254/latest/api/token");
-                HttpURLConnection tokenConnection = (HttpURLConnection) tokenUrl.openConnection();
-                tokenConnection.setRequestMethod("PUT");
-                tokenConnection.setRequestProperty("X-aws-ec2-metadata-token-ttl-seconds", "21600");
-                tokenConnection.setDoOutput(true);
-
-                BufferedReader tokenReader = new BufferedReader(new InputStreamReader(tokenConnection.getInputStream()));
-                String token = tokenReader.readLine();
-                tokenReader.close();
-
-                // Step 2: Use the token to fetch the public IP
-                URL ipUrl = new URL("http://169.254.169.254/latest/meta-data/public-ipv4");
-                HttpURLConnection ipConnection = (HttpURLConnection) ipUrl.openConnection();
-                ipConnection.setRequestMethod("GET");
-                ipConnection.setRequestProperty("X-aws-ec2-metadata-token", token);
-
-                BufferedReader ipReader = new BufferedReader(new InputStreamReader(ipConnection.getInputStream()));
-                this.instanceIP = ipReader.readLine();
-                ipReader.close();
-
-                logger.info("Successfully fetched public IP: {}", instanceIP);
+                this.instanceIP = serverTypeInstance.getIp();
+                logger.info("Successfully fetched public IP for {} server: {}", serverType, instanceIP);
                 return; // Exit the method on successful fetch
             } catch (Exception e) {
                 retries--;
